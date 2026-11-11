@@ -22,6 +22,20 @@ Same hooks and game support as v2.1.8 (game build 1.0.0.3576). Source: `v2.2/cd_
 - Status bar no longer gets cut off when the window is short; long messages wrap.
 - A half-finished hook install is now rolled back instead of leaving a patched instruction behind.
 
+### To test (in game, v2.2)
+
+Checked so far without the game only: settings round-trip, Return stack logic, single-instance exit, UI render (full + compact), build. Still to check in game:
+
+1. **Auto-connect, tool first:** start the tool, then the game. Status should go *Waiting for game → Game starting → Hooked → Connected* (about 25 s after the game starts), with no clicks.
+2. **Auto-connect, game first:** start the game, load in, then the tool. It should hook within a few seconds.
+3. **Game restart:** quit the game with the tool open, start it again. It should re-hook on its own.
+4. **Single instance:** launch the tool a second time. The open window should come to the front and no second copy should start.
+5. **Favorites:** assign waypoints to Num4–Num9 (dropdown and right-click → *Set as Favorite*), press each in game. Rename one waypoint and press its key again.
+6. **Return stack:** teleport 6+ times, press F8 repeatedly. You should step back through the last 5 origins in order; the Return button count should drop to 0.
+7. **Height picker:** press Num2, change the Med value in the spinbox, teleport to a marker with no height. The new value should be used without pressing Num2 again.
+8. **Compact mode:** toggle Compact, teleport / Save Here / Return from it, restart the tool (it should reopen compact at the same size), toggle back to Full.
+9. **Readability:** check both modes at 1440×900, 390×844 and 844×390 window sizes.
+
 Not in v2.2: the health / invulnerability hook is still not found on 1.0.0.3576 (see the table below), so the 10 s post-teleport invulnerability stays off on this build.
 
 ---
