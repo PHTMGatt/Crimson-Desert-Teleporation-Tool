@@ -1966,6 +1966,16 @@ class TeleporterApp(tk.Tk):
                 self._hk_heights[lvl] = v if v > 0 else dflt
             except (TypeError, ValueError):
                 self._hk_heights[lvl] = dflt
+        # 2.2: one StringVar per level, shared by the main-window height
+        # picker and the Advanced tab; edits apply live.
+        self._hk_height_vars = {}
+        for lvl in ("low", "med", "high"):
+            hv = tk.StringVar(value=f"{self._hk_heights[lvl]:g}")
+            hv.trace_add('write', lambda *_a, l=lvl: self._on_hk_height_edit(l))
+            self._hk_height_vars[lvl] = hv
+        self._active_height_lvl = None  # level last picked by Num1/2/3
+        self._hk_height_save_job = None
+        self._height_info_last = None
 
         # WebView map state (MapGenie integration via subprocess)
         self._webmap_open = False
@@ -2207,6 +2217,18 @@ class TeleporterApp(tk.Tk):
                         bordercolor=self.ERR_CLR, lightcolor=self.ERR_CLR,
                         darkcolor=self.ERR_CLR)
         style.configure('TSeparator', background=self.BORDER)
+        style.configure('MonoAccent.TLabel', background=self.BG_CARD,
+                        foreground=self.ACCENT, font=('Consolas', 9, 'bold'))
+        style.configure('TSpinbox', fieldbackground=self.BG_INPUT,
+                        background=self.BG_INPUT, foreground=self.FG,
+                        insertcolor=self.FG, arrowcolor=self.FG,
+                        bordercolor=self.BORDER, lightcolor=self.BORDER,
+                        darkcolor=self.BORDER, padding=(4, 1))
+        style.map('TSpinbox',
+                  bordercolor=[('focus', self.ACCENT)],
+                  lightcolor=[('focus', self.ACCENT)],
+                  darkcolor=[('focus', self.ACCENT)],
+                  arrowcolor=[('active', self.ACCENT)])
         style.configure('CardTitle.TLabel', background=self.BG_CARD,
                         foreground=self.FG, font=('Segoe UI', 10, 'bold'))
         style.configure('CardHint.TLabel', background=self.BG_CARD,
@@ -2327,6 +2349,9 @@ class TeleporterApp(tk.Tk):
         self.map_dest_var = tk.StringVar(value="Map Dest  (no marker)")
         ttk.Label(map_row, textvariable=self.map_dest_var,
                   style='Mono.TLabel').pack(side=tk.LEFT)
+        self.height_info_var = tk.StringVar(value="Height  marker")
+        ttk.Label(pos_inner, textvariable=self.height_info_var,
+                  style='MonoAccent.TLabel').pack(anchor='w', pady=(3, 0))
 
         # Map marker action buttons
         map_btn_frame = ttk.Frame(map_row, style='Card.TFrame')
@@ -2380,10 +2405,17 @@ class TeleporterApp(tk.Tk):
                 self._cancel_rebind() if self._rebinding == hid
                 else self._start_rebind(hid)))
 
-            # Description (height rows show their current value)
+            # Description
             desc_var = tk.StringVar(value=self._hotkey_desc(hk_id))
             ttk.Label(row, textvariable=desc_var, style='Card.TLabel',
                       font=('Segoe UI', 9)).pack(side=tk.LEFT, fill=tk.X)
+            # 2.2 height picker: edit Low/Med/High right here, applied live
+            if hk_id.startswith("height_"):
+                lvl = hk_id[len("height_"):]
+                ttk.Spinbox(row, from_=50, to=10000, increment=50, width=7,
+                            textvariable=self._hk_height_vars[lvl],
+                            font=('Consolas', 9)).pack(
+                    side=tk.LEFT, padx=(8, 0))
 
             self._hk_widgets[hk_id] = {
                 "var": var, "badge_var": badge_var, "badge": badge, "cb": cb,
@@ -2611,22 +2643,20 @@ class TeleporterApp(tk.Tk):
             anchor='w', padx=12, pady=(8, 2))
         ttk.Label(adv_inner,
                   text="Heights set instantly by the Low / Med / High hotkeys "
-                       "(rebind them in the Hotkeys card).",
+                       "(also editable in the Hotkeys card).",
                   style='Card.TLabel',
                   font=('Segoe UI', 8)).pack(anchor='w', padx=12, pady=(0, 8))
         hh_row = ttk.Frame(adv_inner, style='Card.TFrame')
         hh_row.pack(fill=tk.X, padx=12, pady=(0, 6))
-        self._hk_height_vars = {}
         for lvl in ("low", "med", "high"):
             ttk.Label(hh_row, text=f"{HEIGHT_LEVEL_NAMES[lvl]}:",
                       style='Card.TLabel',
                       font=('Segoe UI', 9)).pack(side=tk.LEFT, padx=(0, 4))
-            hv = tk.StringVar(value=f"{self._hk_heights[lvl]:g}")
-            ttk.Entry(hh_row, textvariable=hv, width=7).pack(
-                side=tk.LEFT, padx=(0, 10))
-            self._hk_height_vars[lvl] = hv
-        ttk.Button(hh_row, text="Apply", style='Small.TButton',
-                   command=self._apply_hotkey_heights).pack(side=tk.LEFT)
+            ttk.Spinbox(hh_row, from_=50, to=10000, increment=50, width=7,
+                        textvariable=self._hk_height_vars[lvl],
+                        font=('Consolas', 9)).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Label(hh_row, text="(saved and applied as you type)",
+                  style='CardHint.TLabel').pack(side=tk.LEFT)
 
         self._hk_height_tp_var = tk.BooleanVar(value=False)
         hh_tp_row = ttk.Frame(adv_inner, style='Card.TFrame')
@@ -3472,6 +3502,7 @@ class TeleporterApp(tk.Tk):
 
     def _poll(self):
         get_key = ctypes.windll.user32.GetAsyncKeyState
+        self._refresh_height_info()
 
         # Rebind mode takes priority
         if self._rebinding:
@@ -4768,6 +4799,7 @@ class TeleporterApp(tk.Tk):
 
     def _set_adv_height(self, value):
         """Set height from a preset button."""
+        self._active_height_lvl = None
         self._adv_height = value
         self._height_var.set(str(value))
         self._adv_height_display.set(f"Current: {value}")
@@ -4785,6 +4817,7 @@ class TeleporterApp(tk.Tk):
             self.bottom_var.set("Height must be greater than 0.")
             return
         self._adv_height = value
+        self._active_height_lvl = None
         self._adv_height_display.set(f"Current: {value}")
         self._save_adv_settings()
         self.bottom_var.set(f"Custom height set to {value}")
@@ -4792,17 +4825,54 @@ class TeleporterApp(tk.Tk):
     # ── Height hotkeys ───────────────────────────────────────────
 
     def _hotkey_desc(self, hk_id):
-        desc = dict(self.HOTKEY_DEFS)[hk_id]
-        if hk_id.startswith("height_"):
-            lvl = hk_id[len("height_"):]
-            desc = f"{desc} ({self._hk_heights[lvl]:g})"
-        return desc
+        return dict(self.HOTKEY_DEFS)[hk_id]
 
     def _refresh_height_hotkey_labels(self):
         for lvl in ("low", "med", "high"):
             w = self._hk_widgets.get(f"height_{lvl}")
             if w:
                 w["desc_var"].set(self._hotkey_desc(f"height_{lvl}"))
+
+    def _on_hk_height_edit(self, lvl):
+        """Live-apply a Low/Med/High value as it is typed (2.2). Invalid or
+        half-typed values are ignored until they parse."""
+        try:
+            v = float(self._hk_height_vars[lvl].get())
+        except (ValueError, tk.TclError):
+            return
+        if not (0 < v <= 100000) or v == self._hk_heights.get(lvl):
+            return
+        self._hk_heights[lvl] = v
+        if self._active_height_lvl == lvl and self._adv_enabled_var.get():
+            self._adv_height = v
+            self._height_var.set(str(v))
+            self._adv_height_display.set(f"Current: {v}")
+        if self._hk_height_save_job:
+            self.after_cancel(self._hk_height_save_job)
+        self._hk_height_save_job = self.after(400, self._save_hk_heights_now)
+
+    def _save_hk_heights_now(self):
+        self._hk_height_save_job = None
+        self._save_adv_settings()
+        self.bottom_var.set(
+            "Height hotkeys: " + "  ".join(
+                f"{HEIGHT_LEVEL_NAMES[l]} {self._hk_heights[l]:g}"
+                for l in ("low", "med", "high")))
+
+    def _height_info_text(self):
+        """Short 'what height will a teleport use' line for the UI."""
+        if not self._adv_enabled_var.get():
+            return "Height  marker"
+        lvl = self._active_height_lvl
+        tag = f" {HEIGHT_LEVEL_NAMES[lvl]}" if lvl else ""
+        mode = " always" if self._height_override_var.get() else ""
+        return f"Height  {self._adv_height:g}{tag}{mode}"
+
+    def _refresh_height_info(self):
+        text = self._height_info_text()
+        if text != self._height_info_last:
+            self._height_info_last = text
+            self.height_info_var.set(text)
 
     def _apply_hotkey_heights(self):
         """Apply the Low/Med/High values typed in the Advanced tab."""
@@ -4835,6 +4905,7 @@ class TeleporterApp(tk.Tk):
             self._adv_enabled_var.set(True)
             self._on_adv_toggle()
         self._set_adv_height(value)
+        self._active_height_lvl = lvl
         if self._hk_height_tp_var.get():
             self._teleport_to_map()
         else:
