@@ -243,6 +243,10 @@ DEFAULT_HOTKEYS = {
     "height_med":  {"vk": 0x62, "mod": 0, "enabled": True},  # Num2
     "height_high": {"vk": 0x63, "mod": 0, "enabled": True},  # Num3
 }
+# 2.2: favorite waypoint slots, Num4..Num9 by default (rebindable)
+FAV_SLOTS = 6
+for _n in range(1, FAV_SLOTS + 1):
+    DEFAULT_HOTKEYS[f"fav_{_n}"] = {"vk": 0x63 + _n, "mod": 0, "enabled": True}
 
 # Custom heights applied by the height hotkeys (editable in the Advanced tab)
 DEFAULT_HOTKEY_HEIGHTS = {"low": 500.0, "med": 800.0, "high": 1200.0}
@@ -1880,7 +1884,8 @@ class TeleporterApp(tk.Tk):
         ("height_low",  "Set Teleport Height: Low"),
         ("height_med",  "Set Teleport Height: Med"),
         ("height_high", "Set Teleport Height: High"),
-    ]
+    ] + [(f"fav_{n}", f"Favorite Waypoint {n}")
+         for n in range(1, FAV_SLOTS + 1)]
     HOTKEY_ACTIONS = {
         "teleport": "_teleport_to_map",
         "save":     "_save_map_marker",
@@ -1888,6 +1893,7 @@ class TeleporterApp(tk.Tk):
         "height_low":  "_hk_height_low",
         "height_med":  "_hk_height_med",
         "height_high": "_hk_height_high",
+        **{f"fav_{n}": f"_hk_fav_{n}" for n in range(1, FAV_SLOTS + 1)},
     }
 
     def __init__(self):
@@ -1934,6 +1940,21 @@ class TeleporterApp(tk.Tk):
                 self._hotkeys[hk_id] = dict(DEFAULT_HOTKEYS[hk_id])
 
         self._adv_height = 1200.0  # default, overwritten by _load_adv_settings
+
+        # Favorite waypoint slots (2.2): fav_N -> {name, absX, absY, absZ}
+        # or None. A snapshot of the waypoint, re-synced to the live list
+        # by name/coords, so a favorite still works if the list changes.
+        self._favorites = {}
+        saved_fav = settings.get("favorites", {})
+        for n in range(1, FAV_SLOTS + 1):
+            f = saved_fav.get(f"fav_{n}") if isinstance(saved_fav, dict) else None
+            ok = (isinstance(f, dict) and all(
+                isinstance(f.get(k), (int, float))
+                for k in ("absX", "absY", "absZ")))
+            self._favorites[f"fav_{n}"] = (
+                {"name": str(f.get("name", "")), "absX": float(f["absX"]),
+                 "absY": float(f["absY"]), "absZ": float(f["absZ"])}
+                if ok else None)
 
         # Height hotkey values (Low/Med/High), needed by the hotkey card
         saved_hh = settings.get("advanced", {}).get("hotkey_heights", {})
@@ -2185,6 +2206,27 @@ class TeleporterApp(tk.Tk):
                         bordercolor=self.ERR_CLR, lightcolor=self.ERR_CLR,
                         darkcolor=self.ERR_CLR)
         style.configure('TSeparator', background=self.BORDER)
+        style.configure('CardTitle.TLabel', background=self.BG_CARD,
+                        foreground=self.FG, font=('Segoe UI', 10, 'bold'))
+        style.configure('CardHint.TLabel', background=self.BG_CARD,
+                        foreground=self.FG_DIM, font=('Segoe UI', 8))
+        style.configure('TCombobox', fieldbackground=self.BG_INPUT,
+                        background=self.BG_INPUT, foreground=self.FG,
+                        arrowcolor=self.FG, bordercolor=self.BORDER,
+                        lightcolor=self.BORDER, darkcolor=self.BORDER,
+                        selectbackground=self.BG_INPUT,
+                        selectforeground=self.FG, padding=(4, 1))
+        style.map('TCombobox',
+                  fieldbackground=[('readonly', self.BG_INPUT)],
+                  foreground=[('readonly', self.FG)],
+                  background=[('active', self.SURFACE)],
+                  bordercolor=[('focus', self.ACCENT), ('active', self.ACCENT)],
+                  arrowcolor=[('active', self.ACCENT)])
+        self.option_add('*TCombobox*Listbox.background', self.BG_INPUT)
+        self.option_add('*TCombobox*Listbox.foreground', self.FG)
+        self.option_add('*TCombobox*Listbox.selectBackground', self.SEL_BG)
+        self.option_add('*TCombobox*Listbox.selectForeground', '#ffffff')
+        self.option_add('*TCombobox*Listbox.font', ('Segoe UI', 9))
 
     # ── Placeholder helper ────────────────────────────────────────────
 
@@ -2313,6 +2355,8 @@ class TeleporterApp(tk.Tk):
 
         self._hk_widgets = {}
         for hk_id, desc in self.HOTKEY_DEFS:
+            if hk_id.startswith("fav_"):
+                continue
             row = ttk.Frame(hk_card, style='Card.TFrame')
             row.pack(fill=tk.X, padx=10, pady=2)
 
@@ -2342,6 +2386,9 @@ class TeleporterApp(tk.Tk):
                 "var": var, "badge_var": badge_var, "badge": badge, "cb": cb,
                 "desc_var": desc_var,
             }
+
+        # ── Favorites card (2.2) ─────────────────────────────────────
+        self._build_favorites_card(main)
 
         # ── Notebook (tabs) ──────────────────────────────────────────
         self.notebook = ttk.Notebook(main)
@@ -2747,6 +2794,162 @@ class TeleporterApp(tk.Tk):
                 self._key_state[hk_id] = True
                 return
 
+    # ── Favorite waypoints (2.2) ─────────────────────────────────────
+
+    FAV_NONE = "(none)"
+
+    def _build_favorites_card(self, parent):
+        card = ttk.Frame(parent, style='Card.TFrame')
+        card.pack(fill=tk.X, pady=(0, 8), ipady=4)
+        self._fav_card = card
+        title = ttk.Frame(card, style='Card.TFrame')
+        title.pack(fill=tk.X, padx=10, pady=(6, 4))
+        ttk.Label(title, text="Favorite Waypoints", style='CardTitle.TLabel'
+                  ).pack(side=tk.LEFT)
+        ttk.Label(title, text="press the key in-game to teleport there",
+                  style='CardHint.TLabel').pack(side=tk.LEFT, padx=(8, 0))
+        grid = ttk.Frame(card, style='Card.TFrame')
+        grid.pack(fill=tk.X, padx=10, pady=(0, 2))
+        grid.columnconfigure(1, weight=1, uniform="fav")
+        grid.columnconfigure(3, weight=1, uniform="fav")
+        self._fav_widgets = {}
+        for n in range(1, FAV_SLOTS + 1):
+            hk_id = f"fav_{n}"
+            r, c = (n - 1) % 3, ((n - 1) // 3) * 2
+            hk = self._hotkeys[hk_id]
+            badge_var = tk.StringVar(
+                value=f"  {_hotkey_display(hk['vk'], hk.get('mod', 0))}  ")
+            badge = ttk.Label(grid, textvariable=badge_var,
+                              style='KeyBadge.TLabel', width=8,
+                              anchor='center')
+            badge.grid(row=r, column=c, sticky='w', padx=(0, 6), pady=2)
+            badge.bind('<Button-1>', lambda e, hid=hk_id: (
+                self._cancel_rebind() if self._rebinding == hid
+                else self._start_rebind(hid)))
+            combo_var = tk.StringVar(value=self.FAV_NONE)
+            combo = ttk.Combobox(grid, textvariable=combo_var,
+                                 state='readonly', height=15,
+                                 font=('Segoe UI', 9))
+            combo.grid(row=r, column=c + 1, sticky='ew',
+                       padx=(0, 12 if c == 0 else 0), pady=2)
+            combo.bind('<<ComboboxSelected>>',
+                       lambda e, n=n: self._on_fav_combo(n))
+            self._fav_widgets[n] = {"combo": combo, "combo_var": combo_var}
+            self._hk_widgets[hk_id] = {"badge_var": badge_var, "badge": badge,
+                                       "var": tk.BooleanVar(value=True),
+                                       "desc_var": tk.StringVar()}
+        self._refresh_fav_choices()
+
+    def _match_fav(self, fav):
+        """Index of the local waypoint a favorite snapshot refers to, or -1.
+        Same coords win (survives a rename), then same name (survives an
+        Update Coords)."""
+        if not fav:
+            return -1
+        wps = self.waypoints.local
+        for i, w in enumerate(wps):
+            if (abs(w["absX"] - fav["absX"]) < 0.01
+                    and abs(w["absY"] - fav["absY"]) < 0.01
+                    and abs(w["absZ"] - fav["absZ"]) < 0.01):
+                return i
+        for i, w in enumerate(wps):
+            if w["name"] == fav["name"]:
+                return i
+        return -1
+
+    def _fav_label(self, n):
+        fav = self._favorites.get(f"fav_{n}")
+        return fav["name"] if fav else "empty"
+
+    def _save_favorites(self):
+        settings = _load_settings()
+        settings["favorites"] = dict(self._favorites)
+        _save_settings(settings)
+
+    def _refresh_fav_choices(self):
+        """Re-sync favorite snapshots with the local list and redraw the
+        dropdowns. Called whenever the local list changes."""
+        wps = self.waypoints.local
+        values = [self.FAV_NONE] + [f"{i + 1}. {w['name']}"
+                                    for i, w in enumerate(wps)]
+        changed = False
+        for n, wd in self._fav_widgets.items():
+            wd["combo"].configure(values=values)
+            key = f"fav_{n}"
+            fav = self._favorites.get(key)
+            idx = self._match_fav(fav)
+            if idx >= 0:
+                w = wps[idx]
+                snap = {"name": w["name"], "absX": float(w["absX"]),
+                        "absY": float(w["absY"]), "absZ": float(w["absZ"])}
+                if snap != fav:
+                    self._favorites[key] = snap
+                    changed = True
+                wd["combo_var"].set(values[idx + 1])
+            elif fav:
+                # Waypoint is gone from the list: keep the saved coords.
+                wd["combo_var"].set(f"{fav['name']} (saved coords)")
+            else:
+                wd["combo_var"].set(self.FAV_NONE)
+        if changed:
+            self._save_favorites()
+
+    def _on_fav_combo(self, n):
+        wd = self._fav_widgets[n]
+        idx = wd["combo"].current()
+        self._assign_fav(n, idx - 1 if idx > 0 else None)
+        wd["combo"].selection_clear()
+        self.focus_set()
+
+    def _assign_fav(self, n, wp_idx):
+        """Assign local waypoint `wp_idx` to slot n (None clears it)."""
+        key = f"fav_{n}"
+        hk = self._hotkeys[key]
+        keyname = _hotkey_display(hk["vk"], hk.get("mod", 0))
+        if wp_idx is None or wp_idx < 0 or wp_idx >= len(self.waypoints.local):
+            self._favorites[key] = None
+            self.bottom_var.set(f"{keyname}: cleared")
+        else:
+            w = self.waypoints.local[wp_idx]
+            self._favorites[key] = {
+                "name": w["name"], "absX": float(w["absX"]),
+                "absY": float(w["absY"]), "absZ": float(w["absZ"])}
+            self.bottom_var.set(f"{keyname} \u2192 {w['name']}")
+        self._save_favorites()
+        self._refresh_fav_choices()
+
+    def _hk_fav(self, n):
+        key = f"fav_{n}"
+        hk = self._hotkeys[key]
+        keyname = _hotkey_display(hk["vk"], hk.get("mod", 0))
+        fav = self._favorites.get(key)
+        if not fav:
+            self.bottom_var.set(f"{keyname} has no favorite waypoint set.")
+            return
+        idx = self._match_fav(fav)
+        if idx >= 0:
+            w = self.waypoints.local[idx]
+            name, x, y, z = w["name"], w["absX"], w["absY"], w["absZ"]
+        else:
+            name, x, y, z = fav["name"], fav["absX"], fav["absY"], fav["absZ"]
+        self._teleport_abs(x, y, z, f"{keyname} \u2192 {name}")
+
+    def _teleport_abs(self, x, y, z, label):
+        """Teleport to absolute coords, remembering where we came from."""
+        if not self.engine.attached or not self.engine.hooks_installed:
+            self.bottom_var.set("Not connected to game.")
+            return False
+        apos = self.engine.get_player_abs()
+        if apos:
+            self.recovery_pos = apos
+        ok, err = self.engine.teleport_to_abs(x, y, z)
+        if ok:
+            self._trigger_invuln()
+            self.bottom_var.set(f"Teleported: {label}")
+        else:
+            self.bottom_var.set(err)
+        return ok
+
     # ── Context menu ─────────────────────────────────────────────────
 
     def _make_menu(self):
@@ -2786,6 +2989,15 @@ class TeleporterApp(tk.Tk):
             menu.add_command(label="Rename",         command=self._rename_selected)
             menu.add_command(label="Update Coords",  command=self._update_coords)
             menu.add_command(label="Contribute",     command=self._contribute)
+            fav_menu = self._make_menu()
+            for n in range(1, FAV_SLOTS + 1):
+                hk = self._hotkeys[f"fav_{n}"]
+                fav_menu.add_command(
+                    label=f"{_hotkey_display(hk['vk'], hk.get('mod', 0))}"
+                          f"  ({self._fav_label(n)})",
+                    command=lambda n=n: self._assign_fav(
+                        n, self._selected_local_idx()))
+            menu.add_cascade(label="Set as Favorite", menu=fav_menu)
             menu.add_separator()
             menu.add_command(label="Delete",         command=self._delete_selected)
             menu.add_separator()
@@ -3481,6 +3693,8 @@ class TeleporterApp(tk.Tk):
         if select_iid:
             self.local_tree.selection_set(select_iid)
             self.local_tree.see(select_iid)
+        if hasattr(self, "_fav_widgets"):
+            self._refresh_fav_choices()
 
     def _save_current_pos(self):
         apos = self.engine.get_player_abs()
@@ -4799,6 +5013,11 @@ class TeleporterApp(tk.Tk):
         # Cleanup MUST complete before we destroy the window
         self._cleanup()
         self.destroy()
+
+
+for _n in range(1, FAV_SLOTS + 1):
+    setattr(TeleporterApp, f"_hk_fav_{_n}",
+            lambda self, n=_n: self._hk_fav(n))
 
 
 def main():
