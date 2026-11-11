@@ -680,6 +680,7 @@ class TeleportEngine:
         c += b'\xC5\xFB\x11\x01'                                # vmovsd [rcx], xmm0  (VEX)
         c += b'\x89\x41\x08'                                    # mov [rcx+08], eax
         c += b'\xC7\x41\x0C\x01\x00\x00\x00'                   # mov dword [rcx+0C], 1
+        c += b'\x48\x89\x59\x10'                                # mov [rcx+10], rbx  (marker struct)
         c += b'\x59'                                            # pop rcx
         c += self._abs_jmp(ret)
         return bytes(c)
@@ -696,7 +697,7 @@ class TeleportEngine:
         self.pm.write_bytes(self.inv, b'\x00', 1)
 
         # Initialize mapDestData = zeros
-        self.pm.write_bytes(self.md, bytes(16), 16)
+        self.pm.write_bytes(self.md, bytes(24), 24)
 
         # Write caves
         caves = [
@@ -816,9 +817,20 @@ class TeleportEngine:
             x, y, z, flag = struct.unpack('<fffI', raw)
             if flag != 1:
                 return None
-            return x, y, z
         except Exception:
             return None
+        # 1.0.0.3576+ (map signatures 0/1): cave D also saves the marker
+        # struct pointer (rbx) at mapDestData+0x10. The game's clear-marker
+        # routine resets its "marker set" byte at +0x3C, so a removed marker
+        # stops showing instead of keeping the last value.
+        if self.sig_used.get("Map dest", -1) in (0, 1):
+            try:
+                mptr = self.pm.read_ulonglong(self.md + 0x10)
+                if mptr and self.pm.read_bytes(mptr + 0x3C, 1) == b'\x00':
+                    return None
+            except Exception:
+                pass
+        return x, y, z
 
     # ── teleport ─────────────────────────────────────────────────────
 
