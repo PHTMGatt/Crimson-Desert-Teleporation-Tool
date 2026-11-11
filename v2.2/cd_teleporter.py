@@ -279,7 +279,7 @@ def _scrub_window_coords(data):
     connected monitor. Mutates `data` in place. Returns True if anything
     changed (caller may want to persist)."""
     changed = False
-    for key in ("window", "webmap_window"):
+    for key in ("window", "window_compact", "webmap_window"):
         block = data.get(key)
         if not isinstance(block, dict):
             continue
@@ -1863,20 +1863,22 @@ ATTACH_RETRY_MS = (3000, 5000, 8000, 10000)  # backoff after failed scans
 
 
 class TeleporterApp(tk.Tk):
-    # Dark theme palette
-    BG       = '#1e1e2e'
-    BG_ALT   = '#252536'
-    BG_INPUT = '#313244'
-    BG_CARD  = '#2a2a3c'
-    FG       = '#cdd6f4'
-    FG_DIM   = '#6c7086'
-    ACCENT   = '#89b4fa'
-    OK_CLR   = '#a6e3a1'
-    ERR_CLR  = '#f38ba8'
-    WARN_CLR = '#f9e2af'
-    BORDER   = '#45475a'
-    SURFACE  = '#363649'
-    SEL_BG   = '#5b7bb5'
+    # 2.2 theme: dark crimson + gold, matching the Crimson Desert Stream
+    # Deck keys (gold #D6AA60, ivory #F0E2C8, crimson #5C0E16 -> #160609).
+    BG       = '#150709'
+    BG_ALT   = '#1d0b0e'
+    BG_INPUT = '#2b1115'
+    BG_CARD  = '#210c10'
+    FG       = '#f0e2c8'
+    FG_DIM   = '#a8957c'
+    ACCENT   = '#d6aa60'
+    OK_CLR   = '#8fd17c'
+    ERR_CLR  = '#ff5a5f'
+    WARN_CLR = '#f2a541'
+    BORDER   = '#553024'
+    SURFACE  = '#3d151b'
+    SEL_BG   = '#7e1d26'
+    CRIMSON  = '#5c0e16'
 
     HOTKEY_DEFS = [
         ("teleport", "Teleport to Map Marker"),
@@ -1900,7 +1902,7 @@ class TeleporterApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP_TITLE)
-        self.minsize(700, 800)
+        self.minsize(*self.FULL_MINSIZE)
         self.configure(bg=self.BG)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -2082,7 +2084,15 @@ class TeleporterApp(tk.Tk):
 
     # ── Styling ──────────────────────────────────────────────────────
 
+    FULL_MINSIZE = (700, 700)
+    COMPACT_MINSIZE = (380, 200)
+
     def _apply_style(self):
+        import tkinter.font as tkfont
+        fams = set(tkfont.families(self))
+        # Cinzel is the Stream Deck font; fall back to a serif everyone has.
+        self.HEAD_FONT = next((f for f in ("Cinzel", "Georgia", "Times New Roman")
+                               if f in fams), "Segoe UI")
         style = ttk.Style(self)
         style.theme_use('clam')
         style.configure('.', background=self.BG, foreground=self.FG,
@@ -2201,7 +2211,7 @@ class TeleporterApp(tk.Tk):
         style.configure('Red.TLabel', foreground=self.ERR_CLR, background=self.BG)
         style.configure('Dim.TLabel', foreground=self.FG_DIM, background=self.BG)
         style.configure('Title.TLabel', foreground=self.ACCENT, background=self.BG,
-                        font=('Segoe UI', 13, 'bold'))
+                        font=(self.HEAD_FONT, 13, 'bold'))
         style.configure('Mono.TLabel', background=self.BG_CARD,
                         foreground=self.FG, font=('Consolas', 9))
         style.configure('Warn.TLabel', foreground=self.WARN_CLR,
@@ -2217,6 +2227,7 @@ class TeleporterApp(tk.Tk):
                         bordercolor=self.ERR_CLR, lightcolor=self.ERR_CLR,
                         darkcolor=self.ERR_CLR)
         style.configure('TSeparator', background=self.BORDER)
+        style.configure('Gold.TSeparator', background=self.ACCENT)
         style.configure('MonoAccent.TLabel', background=self.BG_CARD,
                         foreground=self.ACCENT, font=('Consolas', 9, 'bold'))
         style.configure('TSpinbox', fieldbackground=self.BG_INPUT,
@@ -2230,7 +2241,30 @@ class TeleporterApp(tk.Tk):
                   darkcolor=[('focus', self.ACCENT)],
                   arrowcolor=[('active', self.ACCENT)])
         style.configure('CardTitle.TLabel', background=self.BG_CARD,
-                        foreground=self.FG, font=('Segoe UI', 10, 'bold'))
+                        foreground=self.ACCENT, font=(self.HEAD_FONT, 10, 'bold'))
+        # Big, obvious primary actions (compact mode + map marker row)
+        style.configure('Primary.TButton', background=self.SEL_BG,
+                        foreground='#ffffff', padding=(12, 6),
+                        bordercolor=self.ACCENT, lightcolor=self.SEL_BG,
+                        darkcolor=self.SEL_BG, font=('Segoe UI', 10, 'bold'))
+        style.map('Primary.TButton',
+                  background=[('active', self.ACCENT), ('pressed', self.CRIMSON)],
+                  foreground=[('active', self.BG)],
+                  lightcolor=[('active', self.ACCENT)],
+                  darkcolor=[('active', self.ACCENT)])
+        style.configure('Big.TButton', background=self.SURFACE,
+                        foreground=self.FG, padding=(12, 6),
+                        bordercolor=self.BORDER, lightcolor=self.SURFACE,
+                        darkcolor=self.SURFACE, font=('Segoe UI', 10, 'bold'))
+        style.map('Big.TButton',
+                  background=[('active', self.ACCENT), ('pressed', self.SEL_BG)],
+                  foreground=[('active', self.BG)],
+                  lightcolor=[('active', self.ACCENT)],
+                  darkcolor=[('active', self.ACCENT)])
+        style.configure('Status.TLabel', background=self.BG, foreground=self.FG,
+                        font=('Segoe UI', 9, 'bold'))
+        style.configure('HeightBig.TLabel', background=self.BG_CARD,
+                        foreground=self.ACCENT, font=('Consolas', 12, 'bold'))
         style.configure('CardHint.TLabel', background=self.BG_CARD,
                         foreground=self.FG_DIM, font=('Segoe UI', 8))
         style.configure('TCombobox', fieldbackground=self.BG_INPUT,
@@ -2285,15 +2319,23 @@ class TeleporterApp(tk.Tk):
     # ── Build UI ─────────────────────────────────────────────────────
 
     def _build_ui(self):
+        self.height_info_var_c = tk.StringVar()  # compact-card copy
         # Main scrollable area via a frame
         main = ttk.Frame(self)
         main.pack(fill=tk.BOTH, expand=True, padx=12, pady=8)
 
         # ── Header ───────────────────────────────────────────────────
+        self._main = main
         hdr = ttk.Frame(main)
         hdr.pack(fill=tk.X, pady=(0, 8))
-        ttk.Label(hdr, text="Crimson Desert Teleporter Tool",
-                  style='Title.TLabel').pack(side=tk.LEFT)
+        self._title_lbl = ttk.Label(hdr, text=APP_TITLE, style='Title.TLabel')
+        self._title_lbl.pack(side=tk.LEFT)
+
+        # 2.2: compact mode toggle (far right)
+        self._compact_btn = ttk.Button(hdr, text="Compact", width=8,
+                                       style='Small.TButton',
+                                       command=self._toggle_compact)
+        self._compact_btn.pack(side=tk.RIGHT, padx=(8, 0))
 
         # MapGenie interactive map button
         if _HAS_WEBVIEW:
@@ -2314,14 +2356,37 @@ class TeleporterApp(tk.Tk):
         self.status_var = tk.StringVar(value="Connecting...")
         self._status_lbl = ttk.Label(self._status_frame,
                                       textvariable=self.status_var,
-                                      font=('Segoe UI', 9))
+                                      style='Status.TLabel')
         self._status_lbl.pack(side=tk.LEFT)
 
-        ttk.Separator(main, orient='horizontal').pack(fill=tk.X, pady=(0, 8))
+        ttk.Separator(main, orient='horizontal',
+                      style='Gold.TSeparator').pack(fill=tk.X, pady=(0, 8))
+
+        # ── Compact card (2.2): height + the three main actions ──────
+        cc = ttk.Frame(main, style='Card.TFrame')
+        self._compact_card = cc
+        ttk.Label(cc, textvariable=self.height_info_var_c,
+                  style='HeightBig.TLabel').pack(anchor='w', padx=10,
+                                                 pady=(8, 6))
+        cbtn = ttk.Frame(cc, style='Card.TFrame')
+        cbtn.pack(fill=tk.X, padx=10, pady=(0, 10))
+        for col in range(3):
+            cbtn.columnconfigure(col, weight=1, uniform="cbtn")
+        ttk.Button(cbtn, text="Teleport", style='Primary.TButton',
+                   command=self._teleport_to_map).grid(
+            row=0, column=0, sticky='ew', padx=(0, 4))
+        ttk.Button(cbtn, text="Save Here", style='Big.TButton',
+                   command=self._save_current_pos).grid(
+            row=0, column=1, sticky='ew', padx=4)
+        self._c_return_btn = ttk.Button(cbtn, text="Return",
+                                        style='Big.TButton',
+                                        command=self._abort_teleport)
+        self._c_return_btn.grid(row=0, column=2, sticky='ew', padx=(4, 0))
 
         # ── Position card ────────────────────────────────────────────
         pos_card = ttk.Frame(main, style='Card.TFrame')
         pos_card.pack(fill=tk.X, pady=(0, 8), ipady=6)
+        self._pos_card = pos_card
 
         pos_inner = ttk.Frame(pos_card, style='Card.TFrame')
         pos_inner.pack(fill=tk.X, padx=10, pady=(6, 2))
@@ -2350,6 +2415,7 @@ class TeleporterApp(tk.Tk):
         ttk.Label(map_row, textvariable=self.map_dest_var,
                   style='Mono.TLabel').pack(side=tk.LEFT)
         self.height_info_var = tk.StringVar(value="Height  marker")
+        self.height_info_var_c.set("Height  marker")
         ttk.Label(pos_inner, textvariable=self.height_info_var,
                   style='MonoAccent.TLabel').pack(anchor='w', pady=(3, 0))
 
@@ -2374,12 +2440,12 @@ class TeleporterApp(tk.Tk):
         # ── Hotkeys card ─────────────────────────────────────────────
         hk_card = ttk.Frame(main, style='Card.TFrame')
         hk_card.pack(fill=tk.X, pady=(0, 8), ipady=4)
+        self._hk_card = hk_card
 
         hk_title_row = ttk.Frame(hk_card, style='Card.TFrame')
         hk_title_row.pack(fill=tk.X, padx=10, pady=(6, 4))
         ttk.Label(hk_title_row, text="Hotkeys",
-                  style='Card.TLabel',
-                  font=('Segoe UI', 10, 'bold')).pack(side=tk.LEFT)
+                  style='CardTitle.TLabel').pack(side=tk.LEFT)
 
         self._hk_widgets = {}
         for hk_id, desc in self.HOTKEY_DEFS:
@@ -2594,7 +2660,7 @@ class TeleporterApp(tk.Tk):
         # Height Settings
         height_title = ttk.Label(adv_inner, text="Teleport Height",
                                   style='Card.TLabel',
-                                  font=('Segoe UI', 10, 'bold'))
+                                  font=(self.HEAD_FONT, 10, 'bold'))
         height_title.pack(anchor='w', padx=12, pady=(0, 2))
         ttk.Label(adv_inner,
                   text="Height used when map destination Y is 0 (no height data).",
@@ -2639,7 +2705,7 @@ class TeleporterApp(tk.Tk):
         # Height hotkeys (Low / Med / High)
         ttk.Label(adv_inner, text="Height Hotkeys",
                   style='Card.TLabel',
-                  font=('Segoe UI', 10, 'bold')).pack(
+                  font=(self.HEAD_FONT, 10, 'bold')).pack(
             anchor='w', padx=12, pady=(8, 2))
         ttk.Label(adv_inner,
                   text="Heights set instantly by the Low / Med / High hotkeys "
@@ -2702,7 +2768,7 @@ class TeleporterApp(tk.Tk):
         # Map Marker Visibility
         map_title = ttk.Label(adv_inner, text="Map Marker Visibility",
                               style='Card.TLabel',
-                              font=('Segoe UI', 10, 'bold'))
+                              font=(self.HEAD_FONT, 10, 'bold'))
         map_title.pack(anchor='w', padx=12, pady=(8, 2))
         ttk.Label(adv_inner,
                   text="Control which waypoint markers appear on the MapGenie map.",
@@ -2732,11 +2798,22 @@ class TeleporterApp(tk.Tk):
 
         # ── Bottom status bar ────────────────────────────────────────
         status_bar = ttk.Frame(self, style='Card.TFrame')
-        status_bar.pack(fill=tk.X, side=tk.BOTTOM, ipady=4)
+        status_bar.pack(fill=tk.X, side=tk.BOTTOM, ipady=4, before=main)
+        # Remember the full-mode layout, then apply the saved mode
+        self._layout_children = [
+            (w, {("in_" if k == "in" else k): v
+                 for k, v in w.pack_info().items()})
+            for w in main.pack_slaves()]
+        self._compact = False
+        if _load_settings().get("ui", {}).get("compact", False):
+            self._apply_compact(True, resize=False)
         self.bottom_var = tk.StringVar(value="Ready")
-        ttk.Label(status_bar, textvariable=self.bottom_var,
-                  style='Card.TLabel', font=('Segoe UI', 8)).pack(
-            side=tk.LEFT, padx=12)
+        self._bottom_lbl = ttk.Label(status_bar, textvariable=self.bottom_var,
+                                     style='Card.TLabel', font=('Segoe UI', 8))
+        self._bottom_lbl.pack(side=tk.LEFT, padx=12)
+        # wrap long messages instead of clipping them in narrow windows
+        status_bar.bind('<Configure>', lambda e: self._bottom_lbl.configure(
+            wraplength=max(200, e.width - 140)))
         ttk.Label(status_bar, text=f"v{VERSION}",
                   style='Dim.TLabel', font=('Segoe UI', 8)).pack(
             side=tk.RIGHT, padx=12)
@@ -2843,8 +2920,8 @@ class TeleporterApp(tk.Tk):
                   style='CardHint.TLabel').pack(side=tk.LEFT, padx=(8, 0))
         grid = ttk.Frame(card, style='Card.TFrame')
         grid.pack(fill=tk.X, padx=10, pady=(0, 2))
-        grid.columnconfigure(1, weight=1, uniform="fav")
-        grid.columnconfigure(3, weight=1, uniform="fav")
+        self._fav_grid = grid
+        self._fav_hint = title.winfo_children()[-1]
         self._fav_widgets = {}
         for n in range(1, FAV_SLOTS + 1):
             hk_id = f"fav_{n}"
@@ -2855,7 +2932,6 @@ class TeleporterApp(tk.Tk):
             badge = ttk.Label(grid, textvariable=badge_var,
                               style='KeyBadge.TLabel', width=8,
                               anchor='center')
-            badge.grid(row=r, column=c, sticky='w', padx=(0, 6), pady=2)
             badge.bind('<Button-1>', lambda e, hid=hk_id: (
                 self._cancel_rebind() if self._rebinding == hid
                 else self._start_rebind(hid)))
@@ -2863,15 +2939,86 @@ class TeleporterApp(tk.Tk):
             combo = ttk.Combobox(grid, textvariable=combo_var,
                                  state='readonly', height=15,
                                  font=('Segoe UI', 9))
-            combo.grid(row=r, column=c + 1, sticky='ew',
-                       padx=(0, 12 if c == 0 else 0), pady=2)
             combo.bind('<<ComboboxSelected>>',
                        lambda e, n=n: self._on_fav_combo(n))
-            self._fav_widgets[n] = {"combo": combo, "combo_var": combo_var}
+            self._fav_widgets[n] = {"combo": combo, "combo_var": combo_var,
+                                    "badge": badge}
             self._hk_widgets[hk_id] = {"badge_var": badge_var, "badge": badge,
                                        "var": tk.BooleanVar(value=True),
                                        "desc_var": tk.StringVar()}
+        self._layout_fav_grid(2)
         self._refresh_fav_choices()
+
+    def _layout_fav_grid(self, cols):
+        """Two columns in full mode, one in compact mode."""
+        grid = self._fav_grid
+        for col in range(4):
+            grid.columnconfigure(col, weight=0, uniform="")
+        rows = (FAV_SLOTS + cols - 1) // cols
+        for n, wd in self._fav_widgets.items():
+            r, c = (n - 1) % rows, ((n - 1) // rows) * 2
+            wd["badge"].grid(row=r, column=c, sticky='w', padx=(0, 6), pady=2)
+            wd["combo"].grid(row=r, column=c + 1, sticky='ew', pady=2,
+                             padx=(0, 12 if (cols > 1 and c == 0) else 0))
+            grid.columnconfigure(c + 1, weight=1, uniform="fav")
+
+    # ── Compact mode (2.2) ───────────────────────────────────────────
+
+    def _toggle_compact(self):
+        self._save_window_geometry()
+        self._apply_compact(not self._compact, resize=True)
+        settings = _load_settings()
+        settings.setdefault("ui", {})["compact"] = self._compact
+        _save_settings(settings)
+
+    def _apply_compact(self, on, resize=True):
+        """Compact = status, current height, Teleport / Save / Return and
+        the favorite waypoint keys. Full = everything."""
+        self._compact = on
+        hidden = ({self._pos_card, self._hk_card, self.notebook} if on
+                  else {self._compact_card})
+        self._compact_card.pack_forget()
+        for w, _info in self._layout_children:
+            w.pack_forget()
+        for w, info in self._layout_children:
+            if w in hidden:
+                continue
+            w.pack(**info)
+            if w is self._layout_children[1][0] and on:
+                self._compact_card.pack(fill=tk.X, pady=(0, 8))
+        self._layout_fav_grid(1 if on else 2)
+        self._title_lbl.configure(text="CD Teleporter" if on else APP_TITLE)
+        self._compact_btn.configure(text="Full" if on else "Compact")
+        if getattr(self, "_webmap_btn", None) is not None:
+            if on:
+                self._webmap_btn.pack_forget()
+            else:
+                self._webmap_btn.pack(side=tk.RIGHT, padx=(8, 0),
+                                      before=self._status_frame)
+        if on:
+            self._fav_hint.pack_forget()
+        else:
+            self._fav_hint.pack(side=tk.LEFT, padx=(8, 0))
+        self.minsize(*(self.COMPACT_MINSIZE if on else self.FULL_MINSIZE))
+        if resize:
+            self._resize_for_mode()
+
+    def _resize_for_mode(self):
+        """Apply the size saved for the current mode (keeps position)."""
+        wg = _load_settings().get(self._geom_key(), {})
+        w, h = wg.get("width"), wg.get("height")
+        if not (w and h):
+            if self._compact:
+                self.geometry("")
+                self.update_idletasks()
+                w = max(440, self.winfo_reqwidth())
+                h = self.winfo_reqheight()
+            else:
+                w, h = 760, 860
+        self.geometry(f"{w}x{h}")
+
+    def _geom_key(self):
+        return "window_compact" if getattr(self, "_compact", False) else "window"
 
     def _match_fav(self, fav):
         """Index of the local waypoint a favorite snapshot refers to, or -1.
@@ -4873,6 +5020,7 @@ class TeleporterApp(tk.Tk):
         if text != self._height_info_last:
             self._height_info_last = text
             self.height_info_var.set(text)
+            self.height_info_var_c.set(text)
 
     def _apply_hotkey_heights(self):
         """Apply the Low/Med/High values typed in the Advanced tab."""
@@ -4988,16 +5136,17 @@ class TeleporterApp(tk.Tk):
 
     def _restore_window_geometry(self):
         """Restore saved window position/size or centre on screen."""
-        default_w, default_h = 760, 820
+        default_w, default_h = 760, 860
         settings = _load_settings()
-        wg = settings.get("window", {})
-        w = wg.get("width", default_w)
-        h = wg.get("height", default_h)
+        wg = settings.get(self._geom_key(), {})
         x = wg.get("x")
         y = wg.get("y")
+        if x is None or y is None:  # first compact run: use full-mode spot
+            x = settings.get("window", {}).get("x")
+            y = settings.get("window", {}).get("y")
 
         # Set size via geometry() (handles client area correctly)
-        self.geometry(f"{w}x{h}")
+        self._resize_for_mode()
         self.update_idletasks()
 
         # Validate the saved position is still on a connected monitor before
@@ -5074,7 +5223,8 @@ class TeleporterApp(tk.Tk):
             rn = wp.rcNormalPosition
 
             settings = _load_settings()
-            prev = settings.get("window", {}) or {}
+            key = self._geom_key()
+            prev = settings.get(key, {}) or {}
 
             SW_SHOWMINIMIZED = 2
             if wp.showCmd == SW_SHOWMINIMIZED:
@@ -5086,7 +5236,7 @@ class TeleporterApp(tk.Tk):
                 w = self.winfo_width()
                 h = self.winfo_height()
 
-            settings["window"] = {
+            settings[key] = {
                 "width": w,
                 "height": h,
                 "x": rn.left,
