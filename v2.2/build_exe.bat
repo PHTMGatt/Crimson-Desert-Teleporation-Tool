@@ -8,7 +8,7 @@ set "LOCAL_PY=%SCRIPT_DIR%python\python.exe"
 set "PY_LIBS=%SCRIPT_DIR%pylibs"
 set "PYTHON="
 set "PYTHON_SOURCE="
-set "APP_NAME=CrimsonDesertTeleporter"
+set "APP_NAME=CrimsonDesertTeleporter-v2.2"
 
 call :try_python "%LOCAL_PY%" "bundled Python"
 if not defined PYTHON call :try_py_launcher
