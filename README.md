@@ -18,6 +18,8 @@ Prebuilt Windows binaries and source bundles are attached to each [GitHub Releas
 - **Height + teleport combo (optional).** Tick *Advanced → "Height hotkeys also teleport to the map marker"* and Num1/2/3 set the height and teleport in one press.
 - **Advanced options on by default** (for new installs; an existing saved choice is kept).
 - Build script also installs `typing_extensions` (needed by newer pywebview).
+- **Teleport hold.** After a teleport the tool re-writes the position for ~0.3 s and arms the velocity-override counter in the entity cave (zeroed velocity for 60 controller steps), so old momentum can't pull you back. Earlier versions wrote the position once and never armed that counter.
+- **Teleport diagnostics.** The status bar shows the captured entity address (or "Entity: N switching" if the hook keeps flipping between characters), and after each teleport reports "Teleport held" or "Teleport reverted by game".
 
 ### Hook status on 1.0.0.3576 (static scan of the on-disk exe)
 

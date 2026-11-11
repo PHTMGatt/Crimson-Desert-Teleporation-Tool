@@ -27,6 +27,7 @@ import json
 import time
 import atexit
 import re
+import threading
 import tkinter as tk
 from collections import Counter
 from tkinter import ttk
@@ -423,6 +424,7 @@ class TeleportEngine:
         self.hook_len = {}      # addr -> bytes replaced by the JMP patch
         self.sig_used = {}      # hook name -> index of the signature that matched
         self.world_offset_addr = 0
+        self.last_tp_report = None  # (drift, same_entity, entity) after a teleport
         self._trampolines = []  # far-mode trampoline allocations to free
         self._far_mode = False  # True if block is far from hooks
 
@@ -835,14 +837,46 @@ class TeleportEngine:
             lx, ly, lz = abs_x, abs_y, abs_z
 
         try:
-            # Write to position field (+0x90)
-            for base_off in [0x90, 0x1A0]:
-                self.pm.write_float(entity + base_off, lx)
-                self.pm.write_float(entity + base_off + 4, ly)
-                self.pm.write_float(entity + base_off + 8, lz)
-            return True, ""
+            self._write_pos(entity, lx, ly, lz)
+            # 2.1.8: arm the velocity-override counter in teleportData+0x10.
+            # Cave A then stores teleportData[0..16] (zeros) as the velocity
+            # (+0x1B0) for that many controller substeps, so momentum from
+            # before the jump can't drag the player back. Older versions
+            # never set this counter.
+            self.pm.write_int(self.td + 0x10, self.TP_HOLD_STEPS)
         except Exception as e:
             return False, str(e)
+        # Re-assert the position for a few frames in the background, then
+        # record whether it stuck (shown in the status bar by the UI).
+        self.last_tp_report = None
+        threading.Thread(target=self._hold_and_check,
+                         args=(entity, lx, ly, lz), daemon=True).start()
+        return True, ""
+
+    TP_HOLD_STEPS = 60        # controller substeps with zeroed velocity
+    TP_HOLD_WRITES = 8        # position re-writes after the first one
+    TP_HOLD_INTERVAL = 0.04   # seconds between re-writes
+
+    def _write_pos(self, entity, lx, ly, lz):
+        # Position (+0x90) and the controller's step position (+0x1A0)
+        for base_off in (0x90, 0x1A0):
+            self.pm.write_bytes(entity + base_off,
+                                struct.pack('<fff', lx, ly, lz), 12)
+
+    def _hold_and_check(self, entity, lx, ly, lz):
+        try:
+            for _ in range(self.TP_HOLD_WRITES):
+                time.sleep(self.TP_HOLD_INTERVAL)
+                if self.get_entity_base() != entity:
+                    break   # hook moved to another entity; stop writing
+                self._write_pos(entity, lx, ly, lz)
+            time.sleep(0.4)
+            x, y, z = struct.unpack('<fff', self.pm.read_bytes(entity + 0x90, 12))
+            dist = ((x - lx) ** 2 + (y - ly) ** 2 + (z - lz) ** 2) ** 0.5
+            cur = self.get_entity_base()
+            self.last_tp_report = (dist, cur == entity, entity)
+        except Exception as e:
+            self.last_tp_report = (-1.0, False, str(e))
 
     def set_invuln(self, on):
         if self.inv and self.hook_c:
@@ -1768,6 +1802,7 @@ class TeleporterApp(tk.Tk):
         self._local_filter_map = []
         self._shared_filter_map = []
         self._rebinding = None  # which hotkey id is being rebound
+        self._ent_seen = {}     # entity ptr -> last time seen (diagnostics)
 
         # Load hotkey settings
         self._hotkeys = {}
@@ -2511,6 +2546,10 @@ class TeleporterApp(tk.Tk):
         ttk.Label(status_bar, text=f"v{VERSION}",
                   style='Dim.TLabel', font=('Segoe UI', 8)).pack(
             side=tk.RIGHT, padx=12)
+        self.diag_var = tk.StringVar(value="")
+        ttk.Label(status_bar, textvariable=self.diag_var,
+                  style='Dim.TLabel', font=('Consolas', 8)).pack(
+            side=tk.RIGHT, padx=(12, 0))
 
     # ── Hotkey management ────────────────────────────────────────────
 
@@ -3049,6 +3088,39 @@ class TeleporterApp(tk.Tk):
             else:
                 self.pos_var.set("Local     ---.--   ---.--   ---.--")
                 self.abs_var.set("World     (move in-game to capture)")
+
+            # 2.1.8 diagnostics: is the entity hook locked on one entity?
+            # The hooked controller may also run for NPCs/mounts; if the
+            # captured pointer keeps changing, teleports hit the wrong one.
+            now = time.time()
+            ent = self.engine.get_entity_base()
+            if ent:
+                self._ent_seen[ent] = now
+            self._ent_seen = {e: t for e, t in self._ent_seen.items()
+                              if now - t < 2.0}
+            n_ent = len(self._ent_seen)
+            if n_ent > 1:
+                self.diag_var.set(f"Entity: {n_ent} switching")
+            elif ent:
+                self.diag_var.set(f"Entity {ent:X}")
+            else:
+                self.diag_var.set("")
+
+            # Result of the last teleport (filled by the engine's hold thread)
+            rep = self.engine.last_tp_report
+            if rep is not None:
+                self.engine.last_tp_report = None
+                dist, same, ent_info = rep
+                if dist < 0:
+                    self.bottom_var.set(f"Teleport check failed: {ent_info}")
+                elif dist <= 25.0:
+                    self.bottom_var.set(
+                        f"Teleport held (drift {dist:.1f})"
+                        + ("" if same else " - entity changed since"))
+                else:
+                    self.bottom_var.set(
+                        f"Teleport reverted by game (off by {dist:.0f}). "
+                        f"Entity {'stable' if n_ent <= 1 else 'switching'}.")
 
             # Update map dest display
             mdest = self.engine.get_map_dest()
