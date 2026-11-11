@@ -103,6 +103,7 @@ FORM_FIELDS = {
 }
 
 INVULN_SECONDS = 10
+RETURN_STACK_MAX = 5   # 2.2: F8 steps back through this many origins
 HEIGHT_BOOST = 10.0
 
 SETTINGS_FILE = os.path.join(SAVE_DIR, "cd_settings.json")
@@ -1880,7 +1881,7 @@ class TeleporterApp(tk.Tk):
     HOTKEY_DEFS = [
         ("teleport", "Teleport to Map Marker"),
         ("save",     "Save Map Marker as Waypoint"),
-        ("abort",    "Return to Pre-Teleport Position"),
+        ("abort",    "Return: Step Back (last 5 teleports)"),
         ("height_low",  "Set Teleport Height: Low"),
         ("height_med",  "Set Teleport Height: Med"),
         ("height_high", "Set Teleport Height: High"),
@@ -1911,7 +1912,7 @@ class TeleporterApp(tk.Tk):
         self.waypoints = WaypointStore()
         self.waypoints.load()
 
-        self.recovery_pos = None
+        self.return_stack = []  # 2.2: teleport origins, newest last
         self.invuln_end = 0
         self._key_state = {}
         self._local_filter_map = []
@@ -2336,8 +2337,10 @@ class TeleporterApp(tk.Tk):
                                          style='Small.TButton',
                                          command=self._save_map_marker)
         self._save_map_btn.pack(side=tk.LEFT, padx=(0, 3))
-        ttk.Button(map_btn_frame, text="Return", style='Small.TButton',
-                   command=self._abort_teleport).pack(side=tk.LEFT)
+        self._return_btn = ttk.Button(map_btn_frame, text="Return",
+                                      style='Small.TButton', width=10,
+                                      command=self._abort_teleport)
+        self._return_btn.pack(side=tk.LEFT)
 
         self.invuln_var = tk.StringVar(value="")
         self._invuln_lbl = ttk.Label(pos_card, textvariable=self.invuln_var,
@@ -2940,10 +2943,9 @@ class TeleporterApp(tk.Tk):
             self.bottom_var.set("Not connected to game.")
             return False
         apos = self.engine.get_player_abs()
-        if apos:
-            self.recovery_pos = apos
         ok, err = self.engine.teleport_to_abs(x, y, z)
         if ok:
+            self._push_origin(apos)
             self._trigger_invuln()
             self.bottom_var.set(f"Teleported: {label}")
         else:
@@ -3601,11 +3603,10 @@ class TeleporterApp(tk.Tk):
                 "options to set a custom height.")
             return
         apos = self.engine.get_player_abs()
-        if apos:
-            self.recovery_pos = apos
         effective_y += HEIGHT_BOOST
         ok, err = self.engine.teleport_to_abs(x, effective_y, z)
         if ok:
+            self._push_origin(apos)
             self._trigger_invuln()
             self.bottom_var.set(
                 f"Teleported to map marker ({x:.0f}, {effective_y:.0f}, {z:.0f})")
@@ -3642,17 +3643,38 @@ class TeleporterApp(tk.Tk):
         self._refresh_local_list()
         self.bottom_var.set(f"Saved: {result}")
 
-    def _abort_teleport(self):
-        if not self.recovery_pos:
-            self.bottom_var.set("No recovery position. Teleport somewhere first.")
+    def _push_origin(self, apos):
+        """Remember where a successful teleport started (2.2 stack)."""
+        if not apos:
             return
-        rx, ry, rz = self.recovery_pos
+        self.return_stack.append(tuple(apos))
+        del self.return_stack[:-RETURN_STACK_MAX]
+        self._refresh_return_btn()
+
+    def _refresh_return_btn(self):
+        n = len(self.return_stack)
+        text = f"Return ({n})" if n else "Return"
+        for btn in (getattr(self, "_return_btn", None),
+                    getattr(self, "_c_return_btn", None)):
+            if btn is not None:
+                btn.configure(text=text)
+
+    def _abort_teleport(self):
+        """F8: step back one teleport (up to RETURN_STACK_MAX deep)."""
+        if not self.return_stack:
+            self.bottom_var.set("Nothing to return to. Teleport somewhere first.")
+            return
+        rx, ry, rz = self.return_stack.pop()
         ok, err = self.engine.teleport_to_abs(rx, ry, rz)
         if ok:
-            self.recovery_pos = None
-            self.bottom_var.set("Returned to pre-teleport position.")
+            left = len(self.return_stack)
+            self.bottom_var.set(
+                "Returned one step back"
+                + (f" ({left} more)." if left else " (that was the last one)."))
         else:
+            self.return_stack.append((rx, ry, rz))
             self.bottom_var.set(err)
+        self._refresh_return_btn()
 
     # ── Local waypoint actions ───────────────────────────────────────
 
@@ -3717,11 +3739,10 @@ class TeleporterApp(tk.Tk):
             return
         loc = self.waypoints.local[idx]
         apos = self.engine.get_player_abs()
-        if apos:
-            self.recovery_pos = apos
         ok, err = self.engine.teleport_to_abs(
             loc["absX"], loc["absY"], loc["absZ"])
         if ok:
+            self._push_origin(apos)
             self._trigger_invuln()
             self.bottom_var.set(f"Teleported to: {loc['name']}")
         else:
@@ -3932,11 +3953,10 @@ class TeleporterApp(tk.Tk):
             return
         loc = self.waypoints.shared[idx]
         apos = self.engine.get_player_abs()
-        if apos:
-            self.recovery_pos = apos
         ok, err = self.engine.teleport_to_abs(
             loc["absX"], loc["absY"], loc["absZ"])
         if ok:
+            self._push_origin(apos)
             self._trigger_invuln()
             self.bottom_var.set(f"Teleported to: {loc['name']}")
         else:
@@ -4318,10 +4338,9 @@ class TeleporterApp(tk.Tk):
         if effective_y is None:
             effective_y = getattr(self, '_map_height', 1200.0)
         apos = self.engine.get_player_abs()
-        if apos:
-            self.recovery_pos = apos
         ok, err = self.engine.teleport_to_abs(x, effective_y + HEIGHT_BOOST, z)
         if ok:
+            self._push_origin(apos)
             self._trigger_invuln()
             self.bottom_var.set(
                 f"Teleported to ({x:.1f}, {z:.1f}) Height: {effective_y:.0f}")
@@ -4337,11 +4356,10 @@ class TeleporterApp(tk.Tk):
             return
         loc = self.waypoints.local[idx]
         apos = self.engine.get_player_abs()
-        if apos:
-            self.recovery_pos = apos
         ok, err = self.engine.teleport_to_abs(
             loc["absX"], loc["absY"], loc["absZ"])
         if ok:
+            self._push_origin(apos)
             self._trigger_invuln()
             self.bottom_var.set(f"Teleported to: {loc['name']}")
         else:
@@ -4356,11 +4374,10 @@ class TeleporterApp(tk.Tk):
             return
         loc = self.waypoints.shared[idx]
         apos = self.engine.get_player_abs()
-        if apos:
-            self.recovery_pos = apos
         ok, err = self.engine.teleport_to_abs(
             loc["absX"], loc["absY"], loc["absZ"])
         if ok:
+            self._push_origin(apos)
             self._trigger_invuln()
             self.bottom_var.set(f"Teleported to: {loc['name']}")
         else:
