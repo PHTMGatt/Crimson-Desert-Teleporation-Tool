@@ -42,7 +42,7 @@ if os.path.isdir(_pylibs) and _pylibs not in sys.path:
     sys.path.insert(0, _pylibs)
 
 try:
-    import webview as _webview
+    import webview as _webview  # noqa: F401 (availability probe)
     _HAS_WEBVIEW = True
 except ImportError:
     _HAS_WEBVIEW = False
@@ -750,7 +750,7 @@ class TeleportEngine:
                 tramp = self._alloc_near(handle, hook_addr, 64)
                 if not tramp:
                     raise RuntimeError(
-                        f"Could not allocate memory. Close other programs that hook into the game.\n")
+                        "Could not allocate memory. Close other programs that hook into the game.\n")
                 self._trampolines.append(tramp)
                 # Write abs jmp to cave in trampoline
                 abs_jmp = self._abs_jmp(cave_addr)
@@ -971,7 +971,6 @@ class WaypointStore:
                 first = False
                 continue
             # Try quoted name: timestamp,"name",x,y,z
-            import re
             m = re.match(r'^[^,]*,"([^"]*)",([^,]+),([^,]+),([^,]+)', line)
             if not m:
                 m = re.match(r'^[^,]*,([^,]+),([^,]+),([^,]+),([^,]+)', line)
@@ -2925,7 +2924,6 @@ class TeleporterApp(tk.Tk):
         self._fav_widgets = {}
         for n in range(1, FAV_SLOTS + 1):
             hk_id = f"fav_{n}"
-            r, c = (n - 1) % 3, ((n - 1) // 3) * 2
             hk = self._hotkeys[hk_id]
             badge_var = tk.StringVar(
                 value=f"  {_hotkey_display(hk['vk'], hk.get('mod', 0))}  ")
@@ -4859,10 +4857,10 @@ class TeleporterApp(tk.Tk):
             self.bottom_var.set(
                 f"Calibration point 1 saved: game ({apos[0]:.1f}, {apos[2]:.1f}) "
                 f"= map ({lng:.2f}, {lat:.2f}).  "
-                f"Now move to a DIFFERENT location for point 2.")
+                "Now move to a DIFFERENT location for point 2.")
             self._send_cal_status(
-                f"Point 1 saved! Move to a different spot for point 2, "
-                f"then click that spot")
+                "Point 1 saved! Move to a different spot for point 2, "
+                "then click that spot")
         else:
             # Two points collected — save calibration
             self._calibration = list(self._cal_points)
