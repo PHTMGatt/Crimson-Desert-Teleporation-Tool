@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Syntax check (blocking)
+        run: python -m py_compile v2.1.8/cd_teleporter.py v2.2/cd_teleporter.py
+      - name: Install pyflakes
+        run: python -m pip install pyflakes
+      # Advisory: existing code has a few style warnings (unused import, f-strings without
+      # placeholders). Reported, not blocking, since this CI must not change code behavior.
+      - name: Pyflakes (advisory)
+        continue-on-error: true
+        run: python -m pyflakes v2.1.8/cd_teleporter.py v2.2/cd_teleporter.py
