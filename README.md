@@ -138,9 +138,11 @@ Every key is rebindable (click its badge) and Ctrl / Alt / Shift combos work. Nu
 
 ## Installation
 
-**Easiest path:** download `CrimsonDesertTeleporter-v2.1.7.exe` from the [latest release](https://github.com/DameonK/Crimson-Desert-Teleporation-Tool/releases/latest) and double-click it (it requests Administrator automatically).
+**This fork (v2.2):** the fork has no GitHub Releases, so run it from source or build the exe yourself. Clone this repo, then double-click `v2.2/run_teleporter.bat`. To get a single exe instead, run `v2.2/build_exe.bat` (see [Building from source](#building-from-source)); it lands in `v2.2/dist/`.
 
-**From source:** clone the repo (or download the release zip), then double-click `v2.1.7/run_teleporter.bat`. The launcher handles everything:
+**Upstream exe:** `CrimsonDesertTeleporter-v2.1.7.exe` from the [upstream latest release](https://github.com/DameonK/Crimson-Desert-Teleporation-Tool/releases/latest) works with older game builds only. It does not have the 1.0.0.3576 fixes from this fork.
+
+The launcher handles everything:
 
 - Requests Administrator privileges (required for memory access).
 - Finds a usable Python install — or downloads Python 3.12 to a local folder if none is present.
