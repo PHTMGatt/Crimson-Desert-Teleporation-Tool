@@ -55,3 +55,7 @@ v*/**/*.md
 # IDE / editor
 .vscode/
 .idea/
+
+# Test runner
+.pytest_cache/
+.venv/
