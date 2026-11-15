@@ -191,6 +191,17 @@ The launcher handles everything:
 
 Output: `dist/CrimsonDesertTeleporter-v2.2.exe` (v2.2). Re-running the script re-uses the cached `pylibs/` and is much faster the second time.
 
+
+## Running the tests
+
+The tests run against fake game memory, so they need no game and no Administrator rights. CI runs them on Windows with Python 3.12.
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+```
+
+CI (`.github/workflows/ci.yml`) also runs a `py_compile` syntax check on `v2.1.8/` and `v2.2/cd_teleporter.py`, plus an advisory `pyflakes` pass.
 ---
 
 ## FAQ
