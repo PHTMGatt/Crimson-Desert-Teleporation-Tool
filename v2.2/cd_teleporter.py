@@ -2266,6 +2266,26 @@ class TeleporterApp(tk.Tk):
                         foreground=self.ACCENT, font=('Consolas', 12, 'bold'))
         style.configure('CardHint.TLabel', background=self.BG_CARD,
                         foreground=self.FG_DIM, font=('Segoe UI', 8))
+        # Height level tiles (Low / Med / High). Both tile states keep the
+        # same 2px border so the layout never shifts; the level in use gets
+        # a gold frame and a gold name.
+        style.configure('HeightTile.TFrame', background=self.BG_ALT,
+                        borderwidth=2, relief='solid',
+                        bordercolor=self.BORDER, lightcolor=self.BG_ALT,
+                        darkcolor=self.BG_ALT)
+        style.configure('HeightTileOn.TFrame', background=self.BG_ALT,
+                        borderwidth=2, relief='solid',
+                        bordercolor=self.ACCENT, lightcolor=self.ACCENT,
+                        darkcolor=self.ACCENT)
+        style.configure('HeightName.TLabel', background=self.BG_ALT,
+                        foreground=self.FG, font=(self.HEAD_FONT, 10, 'bold'))
+        style.configure('HeightNameOn.TLabel', background=self.BG_ALT,
+                        foreground=self.ACCENT, font=(self.HEAD_FONT, 10, 'bold'))
+        style.configure('HeightTag.TLabel', background=self.BG_ALT,
+                        foreground=self.ACCENT, font=('Segoe UI', 8, 'bold'))
+        style.configure('HeightTile.TCheckbutton', background=self.BG_ALT)
+        style.map('HeightTile.TCheckbutton',
+                  background=[('active', self.BG_ALT)])
         style.configure('TCombobox', fieldbackground=self.BG_INPUT,
                         background=self.BG_INPUT, foreground=self.FG,
                         arrowcolor=self.FG, bordercolor=self.BORDER,
@@ -2447,9 +2467,11 @@ class TeleporterApp(tk.Tk):
                   style='CardTitle.TLabel').pack(side=tk.LEFT)
 
         self._hk_widgets = {}
+        self._hh_tiles = []          # (lvl, tile, name_lbl, tag_lbl)
+        self._hh_tiles_active = ""   # level drawn as active ("" = not drawn)
         for hk_id, desc in self.HOTKEY_DEFS:
-            if hk_id.startswith("fav_"):
-                continue
+            if hk_id.startswith(("fav_", "height_")):
+                continue  # height levels are drawn as tiles below
             row = ttk.Frame(hk_card, style='Card.TFrame')
             row.pack(fill=tk.X, padx=10, pady=2)
 
@@ -2474,18 +2496,18 @@ class TeleporterApp(tk.Tk):
             desc_var = tk.StringVar(value=self._hotkey_desc(hk_id))
             ttk.Label(row, textvariable=desc_var, style='Card.TLabel',
                       font=('Segoe UI', 9)).pack(side=tk.LEFT, fill=tk.X)
-            # 2.2 height picker: edit Low/Med/High right here, applied live
-            if hk_id.startswith("height_"):
-                lvl = hk_id[len("height_"):]
-                ttk.Spinbox(row, from_=50, to=10000, increment=50, width=7,
-                            textvariable=self._hk_height_vars[lvl],
-                            font=('Consolas', 9)).pack(
-                    side=tk.LEFT, padx=(8, 0))
 
             self._hk_widgets[hk_id] = {
                 "var": var, "badge_var": badge_var, "badge": badge, "cb": cb,
                 "desc_var": desc_var,
             }
+
+        # 2.2 height picker: Low / Med / High tiles, edited live here
+        ttk.Label(hk_card, text="Teleport height",
+                  style='CardHint.TLabel').pack(anchor='w', padx=10,
+                                                pady=(6, 2))
+        self._build_height_tiles(hk_card, hotkey_controls=True).pack(
+            fill=tk.X, padx=10, pady=(0, 2))
 
         # ── Favorites card (2.2) ─────────────────────────────────────
         self._build_favorites_card(main)
@@ -2701,35 +2723,26 @@ class TeleporterApp(tk.Tk):
         ttk.Separator(adv_inner, orient='horizontal').pack(
             fill=tk.X, padx=12, pady=4)
 
-        # Height hotkeys (Low / Med / High)
-        ttk.Label(adv_inner, text="Height Hotkeys",
-                  style='Card.TLabel',
-                  font=(self.HEAD_FONT, 10, 'bold')).pack(
-            anchor='w', padx=12, pady=(8, 2))
-        ttk.Label(adv_inner,
-                  text="Heights set instantly by the Low / Med / High hotkeys "
-                       "(also editable in the Hotkeys card).",
-                  style='Card.TLabel',
-                  font=('Segoe UI', 8)).pack(anchor='w', padx=12, pady=(0, 8))
-        hh_row = ttk.Frame(adv_inner, style='Card.TFrame')
-        hh_row.pack(fill=tk.X, padx=12, pady=(0, 6))
-        for lvl in ("low", "med", "high"):
-            ttk.Label(hh_row, text=f"{HEIGHT_LEVEL_NAMES[lvl]}:",
-                      style='Card.TLabel',
-                      font=('Segoe UI', 9)).pack(side=tk.LEFT, padx=(0, 4))
-            ttk.Spinbox(hh_row, from_=50, to=10000, increment=50, width=7,
-                        textvariable=self._hk_height_vars[lvl],
-                        font=('Consolas', 9)).pack(side=tk.LEFT, padx=(0, 10))
-        ttk.Label(hh_row, text="(saved and applied as you type)",
-                  style='CardHint.TLabel').pack(side=tk.LEFT)
+        # Height hotkeys (Low / Med / High): same tiles as the Hotkeys card
+        hh_block = ttk.Frame(adv_inner, style='Card.TFrame')
+        hh_block.pack(fill=tk.X, padx=12, pady=(8, 8))
+        self._hh_block = hh_block
+        hh_title = ttk.Frame(hh_block, style='Card.TFrame')
+        hh_title.pack(fill=tk.X, pady=(0, 6))
+        ttk.Label(hh_title, text="Height Hotkeys", style='Card.TLabel',
+                  font=(self.HEAD_FONT, 10, 'bold')).pack(side=tk.LEFT)
+        ttk.Label(hh_title, text="press a level's key to use it; edits save live",
+                  style='CardHint.TLabel').pack(side=tk.LEFT, padx=(8, 0),
+                                                pady=(2, 0))
+        self._build_height_tiles(hh_block, hotkey_controls=False).pack(
+            fill=tk.X)
 
         self._hk_height_tp_var = tk.BooleanVar(value=False)
-        hh_tp_row = ttk.Frame(adv_inner, style='Card.TFrame')
-        hh_tp_row.pack(fill=tk.X, padx=12, pady=(2, 8))
-        ttk.Checkbutton(hh_tp_row,
-                         text="Height hotkeys also teleport to the map marker",
+        ttk.Checkbutton(hh_block,
+                         text="Also teleport to the map marker",
                          variable=self._hk_height_tp_var,
-                         command=self._save_adv_settings).pack(side=tk.LEFT)
+                         command=self._save_adv_settings).pack(
+            anchor='w', pady=(6, 0))
 
         ttk.Separator(adv_inner, orient='horizontal').pack(
             fill=tk.X, padx=12, pady=4)
@@ -4972,6 +4985,76 @@ class TeleporterApp(tk.Tk):
     def _hotkey_desc(self, hk_id):
         return dict(self.HOTKEY_DEFS)[hk_id]
 
+    def _build_height_tiles(self, parent, hotkey_controls):
+        """Low / Med / High as three equal tiles: name, hotkey badge,
+        height editor and an "in use" tag. With hotkey_controls (Hotkeys
+        card) a tile also carries the enable box and the clickable badge
+        that rebinds the key; elsewhere the badge only mirrors the key."""
+        row = ttk.Frame(parent, style='Card.TFrame')
+        for i, lvl in enumerate(("low", "med", "high")):
+            hk_id = f"height_{lvl}"
+            row.columnconfigure(i, weight=1, uniform="height_tiles")
+            tile = ttk.Frame(row, style='HeightTile.TFrame', padding=(8, 6))
+            tile.grid(row=0, column=i, sticky='nsew',
+                      padx=(0 if i == 0 else 6, 0))
+            tile.columnconfigure(1, weight=1)
+
+            name_col = 0
+            if hotkey_controls:
+                var = tk.BooleanVar(value=self._hotkeys[hk_id]["enabled"])
+                cb = ttk.Checkbutton(
+                    tile, variable=var, style='HeightTile.TCheckbutton',
+                    command=lambda hid=hk_id: self._toggle_hotkey(hid))
+                cb.grid(row=0, column=0, sticky='w', padx=(0, 4))
+                name_col = 1
+                vk = self._hotkeys[hk_id]["vk"]
+                mod = self._hotkeys[hk_id].get("mod", 0)
+                badge_var = tk.StringVar(
+                    value=f"  {_hotkey_display(vk, mod)}  ")
+            else:
+                badge_var = self._hk_widgets[hk_id]["badge_var"]
+
+            name = ttk.Label(tile, text=HEIGHT_LEVEL_NAMES[lvl],
+                             style='HeightName.TLabel')
+            name.grid(row=0, column=name_col, sticky='w')
+            badge = ttk.Label(tile, textvariable=badge_var,
+                              style='KeyBadge.TLabel')
+            badge.grid(row=0, column=2, sticky='e')
+
+            ttk.Spinbox(tile, from_=50, to=10000, increment=50, width=7,
+                        textvariable=self._hk_height_vars[lvl],
+                        font=('Consolas', 10)).grid(
+                row=1, column=0, columnspan=2, sticky='w', pady=(6, 0))
+            tag = ttk.Label(tile, text="", style='HeightTag.TLabel')
+            tag.grid(row=1, column=2, sticky='e', pady=(6, 0))
+            self._hh_tiles.append((lvl, tile, name, tag))
+
+            if hotkey_controls:
+                badge.bind('<Button-1>', lambda e, hid=hk_id: (
+                    self._cancel_rebind() if self._rebinding == hid
+                    else self._start_rebind(hid)))
+                self._hk_widgets[hk_id] = {
+                    "var": var, "badge_var": badge_var, "badge": badge,
+                    "cb": cb,
+                    "desc_var": tk.StringVar(value=self._hotkey_desc(hk_id)),
+                }
+        return row
+
+    def _refresh_height_tiles(self):
+        """Frame the level in use in gold (only while Advanced is on, since
+        that is when a level's height is actually applied)."""
+        lvl = self._active_height_lvl if self._adv_enabled_var.get() else None
+        if lvl == self._hh_tiles_active:
+            return
+        self._hh_tiles_active = lvl
+        for l, tile, name, tag in self._hh_tiles:
+            on = l == lvl
+            tile.configure(style='HeightTileOn.TFrame' if on
+                           else 'HeightTile.TFrame')
+            name.configure(style='HeightNameOn.TLabel' if on
+                           else 'HeightName.TLabel')
+            tag.configure(text="● in use" if on else "")
+
     def _refresh_height_hotkey_labels(self):
         for lvl in ("low", "med", "high"):
             w = self._hk_widgets.get(f"height_{lvl}")
@@ -4999,10 +5082,14 @@ class TeleporterApp(tk.Tk):
     def _save_hk_heights_now(self):
         self._hk_height_save_job = None
         self._save_adv_settings()
-        self.bottom_var.set(
-            "Height hotkeys: " + "  ".join(
-                f"{HEIGHT_LEVEL_NAMES[l]} {self._hk_heights[l]:g}"
-                for l in ("low", "med", "high")))
+        self.bottom_var.set(self._height_levels_text(self._hk_heights))
+
+    @staticmethod
+    def _height_levels_text(heights):
+        """Status line for the three levels: 'Low 500 · Med 800 · ...'."""
+        return "Height hotkeys: " + "  ·  ".join(
+            f"{HEIGHT_LEVEL_NAMES[l]} {heights[l]:g}"
+            for l in ("low", "med", "high"))
 
     def _height_info_text(self):
         """Short 'what height will a teleport use' line for the UI."""
@@ -5014,6 +5101,7 @@ class TeleporterApp(tk.Tk):
         return f"Height  {self._adv_height:g}{tag}{mode}"
 
     def _refresh_height_info(self):
+        self._refresh_height_tiles()
         text = self._height_info_text()
         if text != self._height_info_last:
             self._height_info_last = text
@@ -5039,9 +5127,7 @@ class TeleporterApp(tk.Tk):
             var.set(f"{new[lvl]:g}")
         self._refresh_height_hotkey_labels()
         self._save_adv_settings()
-        self.bottom_var.set(
-            "Height hotkeys: " + "  ".join(
-                f"{HEIGHT_LEVEL_NAMES[l]} {new[l]:g}" for l in ("low", "med", "high")))
+        self.bottom_var.set(self._height_levels_text(new))
 
     def _apply_height_hotkey(self, lvl):
         """Set the teleport height instantly (turns Advanced on if needed),
