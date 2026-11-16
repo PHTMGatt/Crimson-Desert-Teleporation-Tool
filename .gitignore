@@ -55,3 +55,12 @@ v*/**/*.md
 # IDE / editor
 .vscode/
 .idea/
+
+# Test runner
+.pytest_cache/
+.venv/
+
+# Environment files (keep the template, ignore real values)
+.env
+.env.*
+!.env.example
