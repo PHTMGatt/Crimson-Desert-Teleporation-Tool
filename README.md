@@ -8,6 +8,16 @@ Prebuilt Windows binaries and source bundles are attached to each [GitHub Releas
 
 ---
 
+## v2.3 working copy (fork, in progress, NOT tested in game)
+
+`v2.3/` is the P2 working copy, a copy of v2.2 with two behavior changes. `v2.2/` stays exactly as it was until the in-game test below passes. Use v2.2 to play.
+
+- **F6 with Advanced on** saves where you stand, same as the Save Position button. Before, it showed a "Save Disabled" popup and did nothing, and Advanced is on by default.
+- **Hotkeys only fire while the game (or this tool) is focused**, so typing in a browser cannot teleport you. To switch it off, untick *Only while the game is focused* in the Hotkeys card (saved as `hotkeys_focus_only`).
+- Hook bytes are identical to v2.2 (a snapshot test checks this). The health hook is still off.
+
+Folders `v1.0.1` to `v2.1.7` moved to `legacy/` with nothing deleted. Upstream still has them too.
+
 ## What's new in v2.2 (fork)
 
 Same hooks and game support as v2.1.8 (game build 1.0.0.3576). Source: `v2.2/cd_teleporter.py`, exe: `v2.2/dist/CrimsonDesertTeleporter-v2.2.exe`.

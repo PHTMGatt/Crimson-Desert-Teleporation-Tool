@@ -120,15 +120,74 @@ def test_teleport_to_map_without_marker_does_nothing(mod):
 
 # ── known bug ────────────────────────────────────────────────────────
 
-@pytest.mark.xfail(strict=True,
-                   reason="plan #7 / P5: F6 does nothing while Advanced is on "
-                          "(Advanced is on by default since 2.1.8)")
-def test_f6_saves_with_default_settings_instead_of_popup(mod):
-    s = stub(adv=True)               # Advanced default-on
+def _f6_stub(mod, adv):
+    s = stub(adv=adv)
     s._themed_askstring = lambda *a, **k: "spot"
     s.waypoints = types.SimpleNamespace(added=[],
                                         add=lambda *a: s.waypoints.added.append(a))
     s._refresh_local_list = lambda: None
+    s._save_current_pos = lambda: mod.TeleporterApp._save_current_pos(s)
     s.engine.map_dest = (1.0, 2.0, 3.0)
+    return s
+
+
+def test_f6_saves_with_default_settings_instead_of_popup(mod, request):
+    if mod.__name__ != "cdt23":
+        request.applymarker(pytest.mark.xfail(
+            strict=True, reason="plan #7 / decision 5c: F6 does nothing while "
+            "Advanced is on (default since 2.1.8); fixed in the v2.3 working copy"))
+    s = _f6_stub(mod, adv=True)      # Advanced default-on
     mod.TeleporterApp._save_map_marker(s)
     assert s.msgs == [] and s.waypoints.added
+
+
+def test_v23_f6_with_advanced_saves_current_position_not_marker():
+    s = _f6_stub(conftest.cdt23, adv=True)
+    s.engine.abs = (100.0, 250.0, -40.0)
+    s.engine.get_player_abs = lambda: s.engine.abs
+    conftest.cdt23.TeleporterApp._save_map_marker(s)
+    assert s.waypoints.added == [("spot", 100.0, 250.0, -40.0)]
+
+
+def test_v23_f6_without_advanced_still_saves_the_marker():
+    s = _f6_stub(conftest.cdt23, adv=False)
+    conftest.cdt23.TeleporterApp._save_map_marker(s)
+    assert s.waypoints.added == [("spot", 1.0, 2.0, 3.0)]
+
+
+# ── decision 5a: hotkeys only while the game is focused (v2.3) ──────
+
+def _focus_stub(focus_only, fg_pid, game_pid=4242, attach_pid=0):
+    s = types.SimpleNamespace(_hk_focus_only_var=Var(focus_only),
+                              _attach_pid=attach_pid,
+                              engine=types.SimpleNamespace(
+                                  pm=types.SimpleNamespace(process_id=game_pid)))
+    App = conftest.cdt23.TeleporterApp
+    s._foreground_pid = lambda: fg_pid
+    s._game_pid = lambda: App._game_pid(s)
+    return App._hotkeys_allowed_now(s)
+
+
+def test_v23_hotkeys_fire_when_game_focused():
+    assert _focus_stub(True, fg_pid=4242) is True
+
+
+def test_v23_hotkeys_fire_when_the_tool_itself_is_focused():
+    import os
+    assert _focus_stub(True, fg_pid=os.getpid()) is True
+
+
+def test_v23_hotkeys_blocked_when_another_app_is_focused():
+    assert _focus_stub(True, fg_pid=999) is False
+
+
+def test_v23_hotkeys_blocked_when_no_foreground_window():
+    assert _focus_stub(True, fg_pid=0) is False
+
+
+def test_v23_toggle_off_restores_global_hotkeys():
+    assert _focus_stub(False, fg_pid=999) is True
+
+
+def test_v23_game_pid_falls_back_to_attach_pid():
+    assert _focus_stub(True, fg_pid=77, game_pid=0, attach_pid=77) is True
