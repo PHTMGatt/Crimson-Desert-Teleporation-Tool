@@ -9,6 +9,7 @@ so nothing at module level can touch the real %LocalAppData%\\CD_Teleport.
 Each version is loaded under its own name:
   cdt22  = v2.2/cd_teleporter.py
   cdt218 = v2.1.8/cd_teleporter.py
+  cdt23  = v2.3/cd_teleporter.py (P2 working copy, not yet tested in game)
 """
 
 import importlib.util
@@ -29,6 +30,7 @@ os.environ["LOCALAPPDATA"] = _SESSION_APPDATA
 VERSIONS = {
     "cdt22": os.path.join(REPO, "v2.2", "cd_teleporter.py"),
     "cdt218": os.path.join(REPO, "v2.1.8", "cd_teleporter.py"),
+    "cdt23": os.path.join(REPO, "v2.3", "cd_teleporter.py"),
 }
 
 
@@ -58,6 +60,7 @@ def _load(name, path):
 MODULES = {name: _load(name, path) for name, path in VERSIONS.items()}
 cdt22 = MODULES["cdt22"]
 cdt218 = MODULES["cdt218"]
+cdt23 = MODULES["cdt23"]
 
 
 def _redirect_files(mod, monkeypatch, root):
@@ -96,7 +99,7 @@ def data_dir(_isolate):
     return _isolate
 
 
-@pytest.fixture(params=["cdt218", "cdt22"])
+@pytest.fixture(params=["cdt218", "cdt22", "cdt23"])
 def mod(request):
-    """Run a test against both v2.1.8 and v2.2."""
+    """Run a test against v2.1.8, v2.2 and the v2.3 working copy."""
     return MODULES[request.param]

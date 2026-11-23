@@ -53,3 +53,10 @@ def test_hook_bytes_match_snapshot(monkeypatch):
             f.write("\n")
     with open(FIXTURE, encoding="utf-8") as f:
         assert now == json.load(f)
+
+
+def test_v23_hooks_identical_to_v22(monkeypatch):
+    """The P2 working copy must not change a single hook byte."""
+    import conftest
+    assert (current(conftest.cdt22, monkeypatch)
+            == current(conftest.cdt23, monkeypatch))

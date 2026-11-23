@@ -86,7 +86,7 @@ def test_default_hotkeys_shape(mod):
     hk = mod.DEFAULT_HOTKEYS
     assert hk["teleport"]["vk"] == 0x74 and hk["save"]["vk"] == 0x75
     assert hk["abort"]["vk"] == 0x77
-    if mod.__name__ == "cdt22":                  # favorites are new in 2.2
+    if mod.__name__ in ("cdt22", "cdt23"):     # favorites are new in 2.2
         assert [hk[f"fav_{n}"]["vk"] for n in range(1, 7)] == list(
             range(0x64, 0x6A))                   # Num4..Num9
     else:
